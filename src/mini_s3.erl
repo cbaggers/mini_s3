@@ -55,6 +55,7 @@
          get_object_metadata/3,
          get_object_metadata/4,
          s3_url/6,
+         s3_url/7,
          put_object/5,
          put_object/6,
          set_object_acl/3,
@@ -505,6 +506,34 @@ s3_url(Method, BucketName, Key, Lifetime, RawHeaders,
                                   ]),
     RequestURI.
 
+-spec s3_url(atom(), string(), string(), string(), integer() | {integer(), integer()},
+             proplists:proplist(), config()) -> binary().
+s3_url(Method, BucketName, Key, AmzToken, Lifetime, RawHeaders,
+       Config = #config{access_key_id=AccessKey,
+                        secret_access_key=SecretKey})
+  when is_list(BucketName), is_list(Key) ->
+
+    Expires = erlang:integer_to_list(expiration_time(Lifetime)),
+
+    Path = lists:flatten([$/, BucketName, $/ , Key]),
+    CanonicalizedResource = ms3_http:url_encode_loose(Path),
+
+    AmzHeaders = [{"x-amz-security-token", AmzToken}],
+
+    {_StringToSign, Signature} = make_signed_url_authorization2(SecretKey, Method,
+                                                                CanonicalizedResource,
+                                                                Expires, RawHeaders,
+                                                                AmzHeaders),
+
+    RequestURI = iolist_to_binary(
+                   [format_s3_uri(Config, ""), CanonicalizedResource,
+                    $?, "AWSAccessKeyId=", AccessKey,
+                    $&, "Expires=", Expires,
+                    $&, "x-amz-security-token=", ms3_http:url_encode_loose(AmzToken),
+                    $&, "Signature=", ms3_http:url_encode_loose(Signature)
+                   ]),
+    RequestURI.
+
 make_signed_url_authorization(SecretKey, Method, CanonicalizedResource,
                               Expires, RawHeaders) ->
     Headers = canonicalize_headers(RawHeaders),
@@ -518,6 +547,28 @@ make_signed_url_authorization(SecretKey, Method, CanonicalizedResource,
     %% the URL in the docstring for details
     CanonicalizedAMZHeaders = "",
 
+    StringToSign = lists:flatten([HttpMethod, $\n,
+                                  ContentMD5, $\n,
+                                  ContentType, $\n,
+                                  Expires, $\n,
+                                  CanonicalizedAMZHeaders, %% IMPORTANT: No newline here!!
+                                  CanonicalizedResource
+                                 ]),
+
+    Signature = base64:encode(crypto:hmac(sha, SecretKey, StringToSign)),
+    {StringToSign, Signature}.
+
+make_signed_url_authorization2(SecretKey, Method, CanonicalizedResource,
+                               Expires, RawHeaders, AmzHeaders) ->
+    Headers = canonicalize_headers(RawHeaders),
+
+    HttpMethod = string:to_upper(atom_to_list(Method)),
+
+    ContentType = retrieve_header_value("content-type", Headers),
+    ContentMD5 = retrieve_header_value("content-md5", Headers),
+
+    CanonicalizedAMZHeaders =
+        [[Name, $:, Value, $\n] || {Name, Value} <- lists:sort(AmzHeaders)],
 
     StringToSign = lists:flatten([HttpMethod, $\n,
                                   ContentMD5, $\n,
