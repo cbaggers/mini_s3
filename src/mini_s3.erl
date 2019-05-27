@@ -293,7 +293,11 @@ list_objects(BucketName, Options, Config)
               {"marker", proplists:get_value(marker, Options)},
               {"max-keys", proplists:get_value(max_keys, Options)},
               {"prefix", proplists:get_value(prefix, Options)}],
-    Doc = s3_xml_request(Config, get, BucketName, "/", "", Params, <<>>, []),
+    Headers = case proplists:get_value(headers, Options) of
+                  undefined -> [];
+                  FoundHeaders -> FoundHeaders
+              end,
+    Doc = s3_xml_request(Config, get, BucketName, "/", "", Params, <<>>, Headers),
     Attributes = [{name, "Name", text},
                   {prefix, "Prefix", text},
                   {marker, "Marker", text},
