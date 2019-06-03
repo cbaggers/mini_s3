@@ -43,6 +43,7 @@
          copy_object/6,
          delete_object/2,
          delete_object/3,
+         delete_object/4,
          delete_object_version/3,
          delete_object_version/4,
          get_object/3,
@@ -177,7 +178,10 @@ copy_object(DestBucketName, DestKeyName, SrcBucketName, SrcKeyName, Options, Con
           proplists:get_value(if_unmodified_since, Options)},
          {"x-amz-copy-source-if-modified-since",
           proplists:get_value(if_modified_since, Options)},
-         {"x-amz-acl", encode_acl(proplists:get_value(acl, Options))}],
+         {"x-amz-acl", encode_acl(proplists:get_value(acl, Options))},
+         {"x-amz-security-token", proplists:get_value(security_token, Options)}],
+    
+    
     {Headers, _Body} = s3_request(Config, put, DestBucketName, [$/|DestKeyName],
                                   "", [], <<>>, RequestHeaders),
     [{copy_source_version_id,
@@ -230,16 +234,20 @@ delete_bucket(BucketName, Config)
     s3_simple_request(Config, delete, BucketName, "/", "", [], <<>>, []).
 
 -spec delete_object(string(), string()) -> proplists:proplist().
-
 delete_object(BucketName, Key) ->
     delete_object(BucketName, Key, default_config()).
 
 -spec delete_object(string(), string(), config()) -> proplists:proplist().
+delete_object(BucketName, Key, Config) ->
+    delete_object(BucketName, Key, [], Config).
 
-delete_object(BucketName, Key, Config)
+-spec delete_object(string(), string(), proplists:proplist(), config()) -> proplists:proplist().
+delete_object(BucketName, Key, Options, Config)
   when is_list(BucketName), is_list(Key) ->
+    RequestHeaders = 
+        [{"x-amz-security-token", proplists:get_value(security_token, Options)}],
     {Headers, _Body} = s3_request(Config, delete,
-                                  BucketName, [$/|Key], "", [], <<>>, []),
+                                  BucketName, [$/|Key], "", [], <<>>, RequestHeaders),
     Marker = proplists:get_value("x-amz-delete-marker", Headers, "false"),
     Id = proplists:get_value("x-amz-version-id", Headers, "null"),
     [{delete_marker, list_to_existing_atom(Marker)},
